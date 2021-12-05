@@ -32,11 +32,19 @@ uniform mat4 uModelViewMatrix;
 uniform mat3 uNormalMatrix;
 uniform mat4 uProjectionMatrix;
 
-out vec3 n,l,v,vp;
+const float PI = 3.1415926535897932384626433832795;
+
+out vec3 n,l,v,vp,T,B;
 
 void main() {
+  vec2 v_bump1 = vec2(-((atan(aVertexPosition.z, aVertexPosition.x) + PI) / (2.*PI) + 0.1)*0.89, (aVertexPosition.y+0.25)*2.);
+  
+  vec3 T = normalize(uNormalMatrix*vec3(v_bump1, 0.5));
+  vec3 N = normalize(uNormalMatrix*aVertexNormal);
+  vec3 B = cross(N, T);
+
   vp = aVertexPosition;
-  n = normalize(uNormalMatrix*aVertexNormal);
+  n = N;
   l = normalize(vec3(0.25,0.25,0.25));
   vec4 p = uModelViewMatrix*vec4(aVertexPosition,1.0);
   v = normalize(-p.xyz);
@@ -53,9 +61,10 @@ var fs = `#version 300 es
 
 precision mediump float;
 
-in vec3 n,l,v,vp;
+in vec3 n,l,v,vp,T,B;
 
 const float PI = 3.1415926535897932384626433832795;
+uniform mat4 uModelViewMatrix;
 
 uniform sampler2D uSampler;
 uniform sampler2D uSampler2;
@@ -65,7 +74,7 @@ out vec4 outColor;
 vec4 ambientColor;
 vec4 diffuseColor;
 vec4 specularColor;
-const float shininess = 5.;
+const float shininess = 50.;
 const vec4 lightColor = vec4(1.0, 1.0, 1.0, 1.0);
 
 vec3 luminance = vec3(0.0, 0.0, 0.0);
@@ -75,21 +84,26 @@ void main() {
   vec2 v_textCoord = vec2(-((atan(vp.z, vp.x) + PI) / (2.*PI) + 0.1)*0.89, (vp.y+0.25)*2.);
   vec2 v_reflectCoord = vec2((n.x+1.0)/2.0, (n.y +1.0)/2.0);
   vec3 illinois = vec3(texture(uSampler, v_textCoord));
+
+  vec3 bump_n = (illinois*2. - 1.0);
+  vec3 map_n = n - bump_n.x * cross(n,B) + bump_n.y * cross(n, T);
+  
+
   vec3 stadium = vec3(texture(uSampler2, v_reflectCoord));
-  vec3 c = 0.4*illinois + 0.5*stadium;
+  vec3 c = 0.5*illinois + 0.5*stadium;
 
   ambientColor = vec4(c,1.0);
   diffuseColor = vec4(c,1.0);
   specularColor = vec4(1.0,1.0,1.0,1.0);
   vec3 lightDir = normalize(-l);
   vec3 viewDir = normalize(-v);
-  vec3 fn = normalize(n);
+  vec3 fn = normalize(map_n);
 
   vec3 ambient = ambientColor.rgb;
   
   float diff = max(dot(-lightDir, fn), 0.0);
   vec3 diffuse = diffuseColor.rgb*diff;
-  vec3 reflectDir = reflect(-lightDir, fn);
+  vec3 reflectDir = reflect(-lightDir, normalize(n));
   float spec = max(dot(reflectDir, viewDir), 0.0);
   vec3 specular = pow(spec, shininess) * specularColor.rgb;
   
@@ -158,6 +172,7 @@ function initwebgl() {
 
   gl.enableVertexAttribArray(vert_normal_attr);
   gl.vertexAttribPointer(vert_normal_attr, 3, gl.FLOAT, false, 0, 0);
+
 
   // create an index buffer of triangle faces
 
